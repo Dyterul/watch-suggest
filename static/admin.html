@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="robots" content="noindex, nofollow">
+  <title>CineMatch · Admin</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body class="admin-body">
+  <div class="ambient ambient-admin" aria-hidden="true"></div>
+
+  <header class="admin-topbar">
+    <a class="brand" href="/admin">
+      <span class="brand-mark" aria-hidden="true">◐</span>
+      <span class="brand-name">CineMatch</span>
+    </a>
+    <div class="admin-topbar-right">
+      <span class="admin-badge">Admin</span>
+      <span id="save-state" class="save-state" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <main class="admin-shell">
+    <section class="admin-hero">
+      <div>
+        <p class="eyebrow">Haushalt steuern</p>
+        <h1>Was läuft heute bei euch?</h1>
+        <p class="lede">Lege fest, welche Abos wirklich aktiv sind, pflege die Profile und halte die Empfehlungen ehrlich. CineMatch kombiniert nur, was alle sehen können.</p>
+      </div>
+      <div id="status-row" class="status-row" aria-live="polite"></div>
+    </section>
+
+    <div id="admin-error" class="form-error admin-error" role="alert" hidden></div>
+
+    <section class="admin-grid">
+      <article class="admin-card">
+        <header class="card-head">
+          <div>
+            <h2>Haushalts-Abos</h2>
+            <p>Nur Titel dieser Dienste dürfen empfohlen werden – und nur, wenn mindestens eine anwesende Person sie nutzt.</p>
+          </div>
+        </header>
+        <div id="household-toggle" class="provider-toggles"></div>
+        <p class="hint" id="household-note">Änderungen gelten sofort für alle Empfehlungen.</p>
+      </article>
+
+      <article class="admin-card">
+        <header class="card-head">
+          <div>
+            <h2>Empfehlungs-API</h2>
+            <p>Für Home Assistant, Skripte oder das nächste Automatisierungsprojekt.</p>
+          </div>
+        </header>
+        <pre class="code" id="api-example"></pre>
+        <p class="hint">Ohne <code>users</code> fragt der Service alle <code>device_tracker</code> mit <code>state == home</code> ab, die einem Profil zugeordnet sind.</p>
+      </article>
+    </section>
+
+    <section class="admin-card users-card">
+      <header class="card-head">
+        <div>
+          <h2>Personen</h2>
+          <p id="user-count">Profile werden geladen …</p>
+        </div>
+        <button id="refresh-btn" class="btn btn-ghost" type="button">Aktualisieren</button>
+      </header>
+      <div id="users-grid" class="users-grid" aria-live="polite"></div>
+    </section>
+
+    <footer class="admin-footer">
+      <span>CineMatch · Region <span id="region-label">DE</span></span>
+      <a href="/onboard" target="_blank" rel="noopener">Onboarding öffnen ↗</a>
+    </footer>
+  </main>
+
+  <dialog id="preset-dialog" class="dialog" aria-labelledby="preset-title">
+    <div class="dialog-head">
+      <div>
+        <h2 id="preset-title">Vorlage wählen</h2>
+        <p id="preset-sub" class="hint"></p>
+      </div>
+      <button id="preset-close" class="icon-btn" type="button" aria-label="Dialog schließen">✕</button>
+    </div>
+    <div id="preset-grid" class="preset-grid"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/static/js/admin.js" defer></script>
+</body>
+</html>
