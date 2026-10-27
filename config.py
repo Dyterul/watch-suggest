@@ -72,13 +72,6 @@ class Settings(BaseSettings):
     tmdb_timeout_seconds: float = 12.0
     tmdb_cache_ttl_seconds: int = 900
 
-    # Home Assistant
-    ha_base_url: str = ""
-    ha_token: str = ""
-    ha_timeout_seconds: float = 8.0
-    ha_link_service: str = "script.link_tracker_user"
-    ha_verify_ssl: bool = True
-
     # Reverse-Proxy / IP-Erkennung
     trust_forwarded_for: bool = True
 
@@ -132,7 +125,7 @@ class Settings(BaseSettings):
             raise ValueError("TMDB_REGION muss ein zweistelliger ISO-Laendercode sein (z. B. DE).")
         return value
 
-    @field_validator("tmdb_timeout_seconds", "ha_timeout_seconds")
+    @field_validator("tmdb_timeout_seconds")
     @classmethod
     def _positive_timeout(cls, value: float) -> float:
         if value <= 0:
@@ -154,10 +147,6 @@ class Settings(BaseSettings):
     @property
     def tmdb_configured(self) -> bool:
         return bool(self.tmdb_api_key or self.tmdb_read_access_token)
-
-    @property
-    def ha_configured(self) -> bool:
-        return bool(self.ha_base_url and self.ha_token)
 
     @property
     def admin_enabled(self) -> bool:
