@@ -380,11 +380,15 @@ async def _link_home_assistant(
     try:
         service = await ha.link_custom_user(entity_id, custom_user_id)
         result["linked"] = True
-        result["message"] = f"Tracker {entity_id} mit {custom_user_id} verknuepft ({service})."
+        result["message"] = f"Profil erfolgreich gespeichert und mit Home Assistant verknuepft!"
     except HAError as exc:
+        # HA-Verknüpfung ist optional - Profil ist trotzdem gespeichert
+        # IP-basierte Wiedererkennung funktioniert weiterhin
+        result["linked"] = False
         result["message"] = (
-            f"Tracker {entity_id} gefunden, Verknuepfung fehlgeschlagen: {exc}. "
-            "Bitte HA_LINK_SERVICE/configuration.yaml pruefen."
+            f"Profil erfolgreich gespeichert! Automatische Wiedererkennung "
+            f"erfolgt ueber IP-Adresse ({ip}). "
+            f"HA-Attribut-Sync optional fehlgeschlagen (nicht kritisch)."
         )
     return result
 
