@@ -1,0 +1,23 @@
+services:
+  cinematch:
+    build: .
+    image: cinematch:latest
+    container_name: cinematch
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Berlin
+    ports:
+      - "8000:8000"
+    volumes:
+      # SQLite-Datenbank (persistiert)
+      - cinematch-data:/app/data
+      # Hochgeladene Avatare (Presets liegen im Image)
+      - cinematch-avatars:/app/static/avatars/uploads
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  cinematch-data:
+  cinematch-avatars:

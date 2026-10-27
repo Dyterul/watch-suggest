@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="CineMatch – finde gemeinsam den Film für den Abend.">
+  <title>CineMatch · Geschmack kalibrieren</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="onboard-body">
+  <div class="ambient" aria-hidden="true"></div>
+
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/onboard" aria-label="CineMatch Startseite">
+        <span class="brand-mark" aria-hidden="true">◐</span>
+        <span class="brand-name">CineMatch</span>
+      </a>
+      <span class="topbar-note">Für den Gruppenabend</span>
+    </header>
+
+    <!-- Schritt 1: Basisdaten -->
+    <section id="view-basics" class="view" aria-labelledby="basics-title">
+      <div class="step-row">
+        <span class="step-pill">Schritt 1 von 2</span>
+        <span class="step-time">~ 30 Sekunden</span>
+      </div>
+      <h1 id="basics-title">Wer sitzt heute<br><em>auf dem Sofa?</em></h1>
+      <p class="lede">Erzähl uns kurz, wer du bist und wo du streamst. Danach kalibrieren wir deinen Filmgeschmack mit einem kurzen Swipe-Quiz.</p>
+
+      <form id="basics-form" class="panel basics-panel" novalidate>
+        <label class="field" for="name-input">
+          <span class="field-label">Dein Name <span class="required">*</span></span>
+          <input id="name-input" name="name" type="text" placeholder="z. B. Lea" maxlength="40"
+                 autocomplete="given-name" autocapitalize="words" spellcheck="false" required>
+          <span class="field-hint">So erkennen dich die anderen im Haushalt.</span>
+        </label>
+
+        <fieldset class="services">
+          <legend>Deine Streaming-Dienste <span class="muted">(Mehrfachauswahl)</span></legend>
+          <div id="provider-chips" class="chip-grid">
+            <span class="chip-skeleton"></span>
+            <span class="chip-skeleton"></span>
+            <span class="chip-skeleton"></span>
+            <span class="chip-skeleton"></span>
+          </div>
+        </fieldset>
+
+        <p id="basics-error" class="form-error" role="alert" hidden></p>
+
+        <button id="start-btn" class="btn btn-primary btn-wide" type="submit">
+          <span class="btn-label">Geschmack kalibrieren</span>
+          <span class="btn-arrow" aria-hidden="true">→</span>
+        </button>
+        <p class="privacy">Deine IP-Adresse wird nur lokal gespeichert, um dein Handy später über Home Assistant als „anwesend“ zu erkennen.</p>
+      </form>
+    </section>
+
+    <!-- Schritt 2: Swipe-Quiz -->
+    <section id="view-quiz" class="view" aria-labelledby="quiz-title" hidden>
+      <div class="quiz-head">
+        <div>
+          <span class="step-pill">Schritt 2 von 2</span>
+          <h1 id="quiz-title" class="quiz-title">Was spricht dich an?</h1>
+        </div>
+        <button id="restart-btn" class="icon-btn" type="button" aria-label="Quiz neu starten" title="Neu starten">↺</button>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress" role="progressbar" aria-label="Quiz-Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+          <span id="progress-bar" class="progress-bar"></span>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-label">0 Swipes</span>
+          <span id="queue-label" class="muted">Karten werden geladen …</span>
+        </div>
+      </div>
+
+      <div class="deck-shell">
+        <div id="deck" class="deck" role="group" aria-label="Film-Karten"></div>
+        <div id="deck-empty" class="deck-empty" hidden>
+          <span class="deck-empty-icon" aria-hidden="true">🎬</span>
+          <p>Gerade sind keine Karten mehr da.</p>
+          <button id="load-more-btn" class="btn btn-secondary" type="button">Neue Karten laden</button>
+        </div>
+        <div id="deck-loading" class="deck-loading" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Passende Titel werden gesucht …</span>
+        </div>
+      </div>
+
+      <div class="swipe-actions" aria-label="Bewertung">
+        <button class="action action-dislike" type="button" data-action="dislike" aria-label="Gefällt mir nicht">
+          <span class="action-icon" aria-hidden="true">👎</span>
+          <span class="action-label">Nope</span>
+        </button>
+        <button class="action action-skip" type="button" data-action="skip" aria-label="Nicht gesehen oder egal">
+          <span class="action-icon" aria-hidden="true">⏭️</span>
+          <span class="action-label">Egal</span>
+        </button>
+        <button class="action action-like" type="button" data-action="like" aria-label="Gefällt mir">
+          <span class="action-icon" aria-hidden="true">👍</span>
+          <span class="action-label">Ja!</span>
+        </button>
+      </div>
+
+      <p class="swipe-hint">Tippe die Buttons oder wische die Karte: links = Nope · rechts = Ja · nach oben = kenne ich nicht.</p>
+      <p id="quiz-error" class="form-error quiz-error" role="alert" hidden></p>
+
+      <div class="quiz-footer">
+        <button id="finish-btn" class="btn btn-primary btn-wide" type="button" disabled>Mindestens 3 Karten bewerten</button>
+        <button id="skip-to-save-btn" class="btn btn-link" type="button" hidden>Profil jetzt speichern</button>
+      </div>
+    </section>
+
+    <!-- Abschluss -->
+    <section id="view-done" class="view" aria-labelledby="done-title" hidden>
+      <div class="panel done-panel">
+        <div class="done-avatar" id="done-avatar" aria-hidden="true">L</div>
+        <span class="step-pill success">Profil gespeichert</span>
+        <h1 id="done-title">Danke!</h1>
+        <p class="lede" id="done-sub">Dein Geschmack ist jetzt Teil des Haushalts.</p>
+
+        <div id="done-genres" class="badges done-badges"></div>
+
+        <dl class="stats" id="done-stats"></dl>
+
+        <div id="done-ha" class="ha-status" hidden></div>
+
+        <div class="done-actions">
+          <a class="btn btn-primary btn-wide" href="/onboard">Weiteres Profil anlegen</a>
+          <button id="redo-btn" class="btn btn-ghost btn-wide" type="button">Quiz wiederholen</button>
+        </div>
+      </div>
+      <p class="privacy centered">Gespeichert unter <span id="done-ip">deiner IP</span>. Empfehlungen bekommst du, sobald ihr zu Hause seid.</p>
+    </section>
+
+    <footer class="app-footer">
+      <span>CineMatch</span>
+      <span class="dot" aria-hidden="true">•</span>
+      <span>Least-Misery-Empfehlungen für euren Haushalt</span>
+    </footer>
+  </main>
+
+  <noscript>
+    <div class="nojs">CineMatch benötigt JavaScript, um das Swipe-Quiz anzuzeigen.</div>
+  </noscript>
+
+  <script src="/static/js/quiz.js" defer></script>
+</body>
+</html>
