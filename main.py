@@ -17,10 +17,11 @@ Oeffentliche Routen
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import logging
 import secrets
 import time
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +52,10 @@ from recommender import (
 from store import Store, utc_now
 
 logger = logging.getLogger("cinematch")
+PRIVATE_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
+)
 
 #: Vorlagen-Avatare (liegen als SVG unter static/avatars/).
 PRESET_AVATARS: list[dict[str, str]] = [
@@ -161,8 +166,6 @@ class PresentUser(BaseModel):
     providers: list[str] = Field(default_factory=list)
     provider_names: list[str] = Field(default_factory=list)
     source: str = "manual"
-    ha_entity_id: str | None = None
-    tracker_state: str | None = None
 
 
 class ProviderRef(BaseModel):
@@ -250,8 +253,6 @@ def _admin_user_payload(user: dict[str, Any]) -> dict[str, Any]:
             len(user.get(field) or [])
             for field in ("liked", "disliked", "skipped", "seen")
         ),
-        "ha_entity_id": user.get("ha_entity_id"),
-        "custom_user_id": user.get("custom_user_id"),
         "created_at": user.get("created_at"),
         "updated_at": user.get("updated_at"),
     }
@@ -265,8 +266,6 @@ def _present_payload(user: dict[str, Any], source: str) -> dict[str, Any]:
         "providers": user.get("providers", []),
         "provider_names": _provider_names(user.get("providers", [])),
         "source": source,
-        "ha_entity_id": user.get("ha_entity_id"),
-        "tracker_state": user.get("tracker_state"),
     }
 
 
@@ -292,103 +291,84 @@ def _resolve_users(store: Store, identifiers: list[str]) -> list[dict[str, Any]]
     return resolved
 
 
-async def _resolve_present_users(request: Request) -> list[dict[str, Any]]:
-    settings: Settings = request.app.state.settings
-    store: Store = request.app.state.store
-    ha: HAClient = request.app.state.ha
-    if not settings.ha_configured:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Home Assistant ist nicht konfiguriert. Bitte HA_BASE_URL und HA_TOKEN "
-                "setzen oder im Request 'users' uebergeben."
-            ),
-        )
-    try:
-        states = await ha.states()
-    except HAError as exc:
-        raise HTTPException(status_code=502, detail=f"Home Assistant: {exc}") from exc
+def extract_client_ip(request: Request, trust_forwarded_for: bool = True) -> str:
+    """Liest die Client-IP aus Proxy-Headern oder dem Socket-Peer."""
+    if trust_forwarded_for:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return normalize_ip(forwarded.split(",", 1)[0])
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return normalize_ip(real_ip)
+        forwarded_header = request.headers.get("forwarded")
+        if forwarded_header:
+            for part in forwarded_header.split(";"):
+                key, _, value = part.partition("=")
+                if key.strip().lower() == "for" and value:
+                    return normalize_ip(value)
+    client = request.client
+    return normalize_ip(client.host) if client else ""
 
-    present: list[dict[str, Any]] = []
-    for user in store.list_users():
-        tracker = HAClient.match_user_tracker(states, user)
-        if HAClient.tracker_is_home(tracker):
-            assert tracker is not None
-            present.append(
-                {
-                    **user,
-                    "source": "home_assistant",
-                    "ha_entity_id": tracker.get("entity_id"),
-                    "tracker_state": tracker.get("state"),
-                }
+
+def normalize_ip(raw: Any) -> str:
+    """Normalisiert IPv4- und IPv6-Adressen inklusive IPv4-mapped IPv6."""
+    value = str(raw or "").strip().strip('"')
+    if not value:
+        return ""
+    if value.startswith("["):
+        value = value.split("]", 1)[0].lstrip("[")
+    if value.count(":") == 1 and "." in value:
+        value = value.split(":", 1)[0]
+    value = value.split("%", 1)[0]
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return ""
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        return str(address.ipv4_mapped)
+    return address.compressed
+
+
+async def _ping_user(user: dict[str, Any], semaphore: asyncio.Semaphore) -> bool:
+    """Prueft eine private gespeicherte Profil-IP mit einem einzelnen ICMP-Ping."""
+    ip = normalize_ip(user.get("ip"))
+    if not ip:
+        return False
+    address = ipaddress.ip_address(ip)
+    if not any(address in network for network in PRIVATE_NETWORKS):
+        return False
+    command = ["ping", "-n", "-q", "-c", "1", "-W", "1"]
+    command.insert(1, "-4" if address.version == 4 else "-6")
+    command.append(ip)
+
+    async with semaphore:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-    return present
+        except OSError:
+            logger.exception("Ping konnte nicht gestartet werden; iputils-ping pruefen.")
+            return False
+        try:
+            return await asyncio.wait_for(process.wait(), timeout=2.0) == 0
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return False
 
 
-async def _link_home_assistant(
-    request: Request, user: dict[str, Any], ip: str
-) -> dict[str, Any]:
-    """Tracker per IP suchen, ``custom_user_id`` verknuepfen und Ergebnis melden."""
-    settings: Settings = request.app.state.settings
+async def _resolve_present_users(request: Request) -> list[dict[str, Any]]:
     store: Store = request.app.state.store
-    ha: HAClient = request.app.state.ha
-
-    result: dict[str, Any] = {
-        "configured": settings.ha_configured,
-        "matched": False,
-        "linked": False,
-        "entity_id": None,
-        "state": None,
-        "custom_user_id": user.get("custom_user_id"),
-        "message": "",
-    }
-    if not settings.ha_configured:
-        result["message"] = (
-            "Home Assistant nicht konfiguriert (HA_BASE_URL/HA_TOKEN fehlen)."
-        )
-        return result
-
-    try:
-        states = await ha.states()
-    except HAError as exc:
-        result["message"] = f"Home Assistant nicht erreichbar: {exc}"
-        return result
-
-    tracker = HAClient.find_tracker_by_ip(states, ip) if ip else None
-    if tracker is None:
-        tracker = HAClient.match_user_tracker(states, user)
-    if tracker is None:
-        result["message"] = (
-            f"Kein device_tracker mit IP {ip or '—'} gefunden. "
-            "Der Tracker braucht ein 'ip'-Attribut."
-        )
-        return result
-
-    entity_id = str(tracker.get("entity_id"))
-    result["matched"] = True
-    result["entity_id"] = entity_id
-    result["state"] = tracker.get("state")
-
-    custom_user_id = user.get("custom_user_id") or f"cinematch-{uuid.uuid4().hex[:8]}"
-    store.set_user_link(
-        user["id"], custom_user_id=custom_user_id, ha_entity_id=entity_id
-    )
-    result["custom_user_id"] = custom_user_id
-
-    try:
-        service = await ha.link_custom_user(entity_id, custom_user_id)
-        result["linked"] = True
-        result["message"] = f"Profil erfolgreich gespeichert und mit Home Assistant verknuepft!"
-    except HAError as exc:
-        # HA-Verknüpfung ist optional - Profil ist trotzdem gespeichert
-        # IP-basierte Wiedererkennung funktioniert weiterhin
-        result["linked"] = False
-        result["message"] = (
-            f"Profil erfolgreich gespeichert! Automatische Wiedererkennung "
-            f"erfolgt ueber IP-Adresse ({ip}). "
-            f"HA-Attribut-Sync optional fehlgeschlagen (nicht kritisch)."
-        )
-    return result
+    users = store.list_users()
+    semaphore = asyncio.Semaphore(16)
+    online = await asyncio.gather(*(_ping_user(user, semaphore) for user in users))
+    return [
+        {**user, "source": "ping"}
+        for user, is_online in zip(users, online)
+        if is_online
+    ]
 
 
 def _avatar_extension(data: bytes) -> str | None:
@@ -428,7 +408,6 @@ def create_app(
     settings: Settings | None = None,
     *,
     tmdb_transport: Any | None = None,
-    ha_transport: Any | None = None,
 ) -> FastAPI:
     """App-Factory (erlaubt Test-Injection von Settings und HTTP-Transporten)."""
     settings = settings or get_settings()
@@ -442,17 +421,8 @@ def create_app(
             logger.info("%s abgelaufene Quiz-Sessions entfernt.", purged)
 
         tmdb = TMDBClient.from_settings(settings, transport=tmdb_transport)
-        ha = HAClient(
-            settings.ha_base_url,
-            settings.ha_token,
-            timeout=settings.ha_timeout_seconds,
-            verify_ssl=settings.ha_verify_ssl,
-            link_service=settings.ha_link_service,
-            transport=ha_transport,
-        )
         app.state.store = store
         app.state.tmdb = tmdb
-        app.state.ha = ha
         app.state.quiz = QuizService(
             tmdb,
             store,
@@ -463,8 +433,6 @@ def create_app(
 
         if not settings.tmdb_configured:
             logger.warning("TMDB_API_KEY/TMDB_READ_ACCESS_TOKEN fehlt - Quiz deaktiviert.")
-        if not settings.ha_configured:
-            logger.warning("HA_BASE_URL/HA_TOKEN fehlt - Presence-Tracking deaktiviert.")
         if not settings.admin_enabled:
             logger.warning("ADMIN_PASSWORD fehlt - /admin ist gesperrt.")
         elif settings.admin_password in {"changeme", "change-me", "admin"}:
@@ -473,12 +441,11 @@ def create_app(
             yield
         finally:
             await tmdb.aclose()
-            await ha.aclose()
 
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="Gruppen-Filmempfehlungen fuer Home Assistant mit adaptivem Swipe-Quiz.",
+        description="Gruppen-Filmempfehlungen mit IP-Presence und adaptivem Swipe-Quiz.",
         docs_url="/api/docs",
         redoc_url=None,
         lifespan=lifespan,
@@ -495,11 +462,6 @@ def create_app(
     @app.exception_handler(TMDBError)
     async def _tmdb_error_handler(request: Request, exc: TMDBError) -> JSONResponse:
         logger.warning("TMDB-Fehler: %s", exc)
-        return JSONResponse(status_code=502, content={"detail": str(exc)})
-
-    @app.exception_handler(HAError)
-    async def _ha_error_handler(request: Request, exc: HAError) -> JSONResponse:
-        logger.warning("Home-Assistant-Fehler: %s", exc)
         return JSONResponse(status_code=502, content={"detail": str(exc)})
 
     @app.exception_handler(QuizError)
@@ -538,7 +500,7 @@ def create_app(
             "time": utc_now(),
             "region": settings.tmdb_region,
             "tmdb_configured": settings.tmdb_configured,
-            "home_assistant_configured": settings.ha_configured,
+            "presence_method": "ping",
             "admin_configured": settings.admin_enabled,
             "users": store.count_users(),
         }
@@ -600,7 +562,7 @@ def create_app(
             skipped=profile["skipped"],
             seen=profile["seen"],
         )
-        ha_result = await _link_home_assistant(request, user, ip)
+        reachable = await _ping_user(user, asyncio.Semaphore(1))
         store.delete_quiz_session(payload.session_id)
         user = store.get_user(user["id"]) or user
 
@@ -611,7 +573,7 @@ def create_app(
             },
             "user_created": created,
             "client_ip": ip,
-            "home_assistant": ha_result,
+            "presence": {"source": "ping", "reachable": reachable},
         }
 
     # ------------------------------------------------------------- presence
@@ -620,7 +582,7 @@ def create_app(
     async def presence(request: Request) -> dict[str, Any]:
         users = await _resolve_present_users(request)
         return {
-            "present_users": [_present_payload(user, "home_assistant") for user in users],
+            "present_users": [_present_payload(user, "ping") for user in users],
             "count": len(users),
             "checked_at": utc_now(),
         }
@@ -644,12 +606,15 @@ def create_app(
             presence_source = "manual"
         else:
             users = await _resolve_present_users(request)
-            presence_source = "home_assistant"
+            presence_source = "ping"
 
         if not users:
             raise HTTPException(
                 status_code=404,
-                detail="Keine anwesenden, registrierten Personen gefunden.",
+                detail=(
+                    "Keine anwesenden, registrierten Personen gefunden. Prüfe, ob die "
+                    "privaten Profil-IPs vom Container per Ping erreichbar sind."
+                ),
             )
 
         household = store.get_household_providers()
@@ -691,9 +656,8 @@ def create_app(
             "presets": PRESET_AVATARS,
             "status": {
                 "tmdb_configured": settings.tmdb_configured,
-                "home_assistant_configured": settings.ha_configured,
+                "presence_method": "ping",
                 "admin_user": settings.admin_user,
-                "ha_link_service": settings.ha_link_service,
                 "region": settings.tmdb_region,
                 "database": str(settings.database_file),
             },

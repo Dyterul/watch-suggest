@@ -2,7 +2,7 @@
 
 Alle Werte lassen sich ueber Umgebungsvariablen oder eine `.env`-Datei setzen
 (pydantic-settings, V2). Die Namen entsprechen den Feldnamen in Grossbuchstaben,
-z. B. ``TMDB_API_KEY``, ``HA_BASE_URL`` oder ``ADMIN_PASSWORD``.
+z. B. ``TMDB_API_KEY`` oder ``ADMIN_PASSWORD``.
 """
 
 from __future__ import annotations

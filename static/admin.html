@@ -28,7 +28,7 @@
       <div>
         <p class="eyebrow">Haushalt steuern</p>
         <h1>Was läuft heute bei euch?</h1>
-        <p class="lede">Lege fest, welche Abos wirklich aktiv sind, pflege die Profile und halte die Empfehlungen ehrlich. CineMatch kombiniert nur, was alle sehen können.</p>
+        <p class="lede">Lege fest, welche Abos im Haushalt aktiv sind, und pflege die persönlichen Geschmacksprofile.</p>
       </div>
       <div id="status-row" class="status-row" aria-live="polite"></div>
     </section>
@@ -40,7 +40,7 @@
         <header class="card-head">
           <div>
             <h2>Haushalts-Abos</h2>
-            <p>Nur Titel dieser Dienste dürfen empfohlen werden – und nur, wenn mindestens eine anwesende Person sie nutzt.</p>
+            <p>Empfehlungen verwenden ausschließlich Titel aus diesen Haushalts-Abos. Persönliche Abo-Auswahlen begrenzen die Suche nicht.</p>
           </div>
         </header>
         <div id="household-toggle" class="provider-toggles"></div>
@@ -51,11 +51,11 @@
         <header class="card-head">
           <div>
             <h2>Empfehlungs-API</h2>
-            <p>Für Home Assistant, Skripte oder das nächste Automatisierungsprojekt.</p>
+            <p>Für Skripte und Automatisierungen.</p>
           </div>
         </header>
         <pre class="code" id="api-example"></pre>
-        <p class="hint">Ohne <code>users</code> fragt der Service alle <code>device_tracker</code> mit <code>state == home</code> ab, die einem Profil zugeordnet sind.</p>
+        <p class="hint">Ohne <code>users</code> prüft der Container die gespeicherten privaten Profil-IPs per Ping. Geräte und Container müssen ICMP im lokalen Netzwerk zulassen.</p>
       </article>
     </section>
 

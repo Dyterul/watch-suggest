@@ -117,9 +117,9 @@
         hint: status.tmdb_configured ? "Quiz & Suche aktiv" : "Kein API-Key gesetzt",
       },
       {
-        label: status.home_assistant_configured ? "Home Assistant verbunden" : "Home Assistant fehlt",
-        tone: status.home_assistant_configured ? "ok" : "warn",
-        hint: status.home_assistant_configured ? status.ha_link_service : "HA_BASE_URL/HA_TOKEN fehlen",
+        label: "Anwesenheit per Ping",
+        tone: "ok",
+        hint: "Erreichbare private Profil-IPs im lokalen Netz",
       },
       {
         label: `${users.length} ${users.length === 1 ? "Profil" : "Profile"}`,
@@ -346,16 +346,6 @@
       meta.append(genres);
     }
 
-    const ha = document.createElement("p");
-    ha.className = "user-ha";
-    if (user.ha_entity_id) {
-      ha.textContent = `⌂ ${user.ha_entity_id}${user.custom_user_id ? ` · ${user.custom_user_id}` : ""}`;
-    } else {
-      ha.textContent = "⌂ Noch keinem Home-Assistant-Tracker zugeordnet";
-      ha.classList.add("muted");
-    }
-    meta.append(ha);
-
     const actions = document.createElement("div");
     actions.className = "user-actions";
 
@@ -420,7 +410,7 @@
 
     if (button.dataset.action === "reset") {
       const confirmed = window.confirm(
-        `Profil von ${user.name} zurücksetzen? Swipes und Geschmack werden gelöscht, Avatar und HA-Zuordnung bleiben.`
+        `Profil von ${user.name} zurücksetzen? Swipes und Geschmack werden gelöscht, der Avatar bleibt erhalten.`
       );
       if (!confirmed) return;
       button.disabled = true;

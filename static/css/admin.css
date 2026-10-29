@@ -440,16 +440,6 @@
   line-height: 1.4;
 }
 
-.user-ha {
-  font-size: 0.68rem;
-  color: #a5b4fc;
-  overflow-wrap: anywhere;
-}
-
-.user-ha.muted {
-  color: #64748b;
-}
-
 .user-actions {
   display: flex;
   flex-wrap: wrap;
