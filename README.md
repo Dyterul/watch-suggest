@@ -1,8 +1,8 @@
 # CineMatch
 
 Gruppen-Filmempfehlungen für den Haushalt: ein adaptives Swipe-Quiz auf dem Handy,
-Home-Assistant-Presence-Tracking und eine Least-Misery-Engine, die nur Titel
-empfiehlt, die wirklich bei einem aktiven Abo laufen.
+IP-Ping-basierte Presence-Erkennung aus dem Container und eine Least-Misery-Engine,
+die nur Titel aus den aktivierten Haushalts-Abos empfiehlt.
 
 **Stack:** Python 3.11+, FastAPI, httpx, Pydantic v2, SQLite, Vanilla JS mit
 Pointer-Gesten (kein Framework, kein Build-Schritt).
@@ -16,9 +16,9 @@ Pointer-Gesten (kein Framework, kein Build-Schritt).
 | `/onboard` | Mobile Dark-Mode-Onboarding, Name + Streaming-Dienste, Tinder-Swipe-Quiz |
 | Adaptives Quiz | Start mit 5 diversen Benchmark-Filmen, danach TMDB-Empfehlungen zu Likes + Genre-Vektor in Echtzeit über `/api/v1/quiz/next` |
 | `/admin` | HTTP-Basic-Auth, Haushalts-Abos, alle Profile mit IPs, Avatar-Upload, Vorlagen, Reset/Löschen |
-| `/api/v1/recommendations` | Gruppenempfehlungen für übergebene Personen oder automatisch alle per HA anwesenden Personen |
-| Presence | `/api/v1/presence`, IP-Matching gegen `device_tracker`, `custom_user_id`-Verknüpfung |
-| Engine | Strikte Provider-Schnittmenge, Ausschluss bereits bewerteter Titel, Genre-/Taste-Vektor, Least-Misery-Score |
+| `/api/v1/recommendations` | Gruppenempfehlungen für übergebene Personen oder automatisch alle per Ping erreichbaren Profile |
+| Presence | `/api/v1/presence`, Ping der gespeicherten privaten Profil-IP-Adressen |
+| Engine | Ausschluss bereits bewerteter Titel, Genre-/Taste-Vektor, Haushalts-Provider-Filter und Least-Misery-Score |
 
 ### Dateien
 
@@ -27,7 +27,6 @@ main.py            FastAPI-App, Seiten, Quiz- und Admin-Endpunkte
 config.py          pydantic-settings, Provider-Katalog, TMDB-Region
 store.py           SQLite-Repository (Nutzer, Sessions, Haushalts-Einstellungen)
 recommender.py     TMDB-Client, adaptives Quiz, Least-Misery-Engine
-ha_client.py       HA-REST-Client, IP-Erkennung, Tracker-Matching
 static/            HTML, CSS, JS, Profilbild-Vorlagen, Uploads
 Dockerfile         Produktions-Image (non-root)
 docker-compose.yml Persistente SQLite-DB + Avatar-Volume
@@ -41,8 +40,7 @@ docker-compose.yml Persistente SQLite-DB + Avatar-Volume
 
 ```bash
 cp .env.example .env
-# .env öffnen: TMDB_API_KEY (oder TMDB_READ_ACCESS_TOKEN), ADMIN_PASSWORD,
-# HA_BASE_URL und HA_TOKEN setzen
+# .env öffnen: TMDB_API_KEY (oder TMDB_READ_ACCESS_TOKEN) und ADMIN_PASSWORD setzen
 docker compose up -d --build
 ```
 
@@ -89,9 +87,6 @@ Alle Variablen können in `.env` oder als echte Umgebungsvariablen gesetzt werde
 | `TMDB_READ_ACCESS_TOKEN` | *(leer)* | Alternativ v4 Read Access Token (Bearer) |
 | `TMDB_REGION` | `DE` | Watch-Region für Discover/Provider |
 | `TMDB_LANGUAGE` | `de-DE` | Sprache für Titel/Overviews |
-| `HA_BASE_URL` | *(leer)* | z. B. `http://homeassistant.local:8123` |
-| `HA_TOKEN` | *(leer)* | Long-Lived Access Token |
-| `HA_LINK_SERVICE` | `script.link_tracker_user` | Script, das `custom_user_id` in den Tracker schreibt |
 | `TRUST_FORWARDED_FOR` | `true` | `X-Forwarded-For` auswerten (Nginx/Reverse Proxy) |
 | `HOUSEHOLD_DEFAULT_PROVIDERS` | `netflix,prime` | Startwert, bis im Admin gespeichert wird (Komma oder JSON) |
 | `QUIZ_MAX_ANSWERS` | `20` | Maximale Karten pro Session |
@@ -101,33 +96,26 @@ Alle Variablen können in `.env` oder als echte Umgebungsvariablen gesetzt werde
 dann *Settings → API* → API-Key beantragen. Der Key wird ausschließlich
 serverseitig verwendet und nie an den Browser ausgeliefert.
 
-**Home-Assistant-Token:** Profil → *Long-Lived Access Tokens* → Token erstellen.
-Der Token bleibt in `.env` bzw. in den Secrets der Deployment-Umgebung.
+---
+
+## Anwesenheit per Container-Ping
+
+Beim Onboarding speichert CineMatch die Client-IP. Bei automatischen Empfehlungen
+und `GET /api/v1/presence` pingt der Container die gespeicherten privaten
+Profil-IPs direkt. Dafür müssen Container und Geräte im selben erreichbaren
+Netz liegen und ICMP-Pings erlauben. Das Docker-Image installiert `iputils-ping`; Compose gewährt dem non-root-Prozess
+gezielt die `NET_RAW`-Capability und behält `no-new-privileges` aktiv. Im Bridge-Netz
+muss ggf. eine Route ins LAN eingerichtet werden. Hinter einem Reverse Proxy
+muss die echte Geräte-IP über `X-Forwarded-For` oder `X-Real-IP` ankommen.
 
 ---
 
-## Home Assistant einrichten
+## API-Client (z. B. Home Assistant)
 
-### 1. Long-Lived Token und Erreichbarkeit
+Home Assistant kann die Recommendations-API weiterhin aufrufen, ist aber nicht
+für Presence-Erkennung oder Profilerstellung erforderlich.
 
-CineMatch muss die HA-Instanz im LAN erreichen (`HA_BASE_URL`) und der Token
-braucht mindestens Lesezugriff auf States sowie Aufrufrechte für das
-Verknüpfungs-Script.
-
-### 2. `device_tracker` mit IP-Attribut
-
-Beim Onboarding sucht der Service in `GET /api/states` nach
-`device_tracker.*`-Entities, deren Attribut `ip`, `ip_address`, `current_ip`
-oder `last_ip` zur Client-IP passt. Viele Router-Integrationen (z. B. FRITZ!Box
-Tools, Unifi, Ping) liefern diese Attribute. Prüfen unter *Entwicklerwerkzeuge →
-Zustände*: Das Attribut muss auf der Tracker-Entity sichtbar sein.
-
-Ohne IP-Attribut schlägt nur die automatische Zuordnung fehl; Profile und
-Empfehlungen funktionieren weiter (z. B. mit expliziter `users`-Liste). Sobald
-eine Person einmal zugeordnet ist, merkt sich CineMatch `ha_entity_id` und
-`custom_user_id` und findet den Tracker auch ohne IP wieder.
-
-### 3. `configuration.yaml` – REST-Command für HA → CineMatch
+### REST-Command
 
 ```yaml
 # configuration.yaml
@@ -156,7 +144,7 @@ script:
 ```
 
 `rest_command` gibt die Antwort nicht als Entity zurück. Für Anzeige in Lovelace
-nutzt du zusätzlich einen REST-Sensor (lädt automatisch die anwesenden Personen):
+nutzt du zusätzlich einen REST-Sensor:
 
 ```yaml
 sensor:
@@ -176,91 +164,7 @@ sensor:
     scan_interval: 900
 ```
 
-Benachrichtigung beim Start des Filmabends:
-
-```yaml
-automation:
-  - alias: "Filmabend – Empfehlung anzeigen"
-    trigger:
-      - platform: state
-        entity_id: input_boolean.filmabend
-        to: "on"
-    action:
-      - service: homeassistant.update_entity
-        target:
-          entity_id: sensor.cinematch_empfehlungen
-      - service: persistent_notification.create
-        data:
-          title: "CineMatch"
-          message: >-
-            {% set results = state_attr('sensor.cinematch_empfehlungen', 'results') %}
-            {% if results %}
-              {{ results[0].title }} ({{ results[0].year }}) ·
-              {{ results[0].match_percent }} % Match · {{ results[0].reason }}
-            {% else %}
-              Keine passende Empfehlung – Abos oder Profile prüfen.
-            {% endif %}
-```
-
-### 4. `custom_user_id` in den Tracker schreiben
-
-Home Assistant kann Attribute von `device_tracker`-Entities nicht über die
-generische REST-API setzen. Deshalb ruft CineMatch einen Script-Service auf,
-der ein `python_script` nutzt. `python_script` ist ein eingebauter Bestandteil
-von Home Assistant, muss aber aktiviert werden.
-
-`configuration.yaml`:
-
-```yaml
-# Aktiviert python_scripts (einmalig, danach HA neu starten)
-python_script:
-
-script:
-  link_tracker_user:
-    alias: "CineMatch: Tracker mit Profil verknüpfen"
-    description: "Schreibt custom_user_id in die Attribute eines device_tracker."
-    mode: queued
-    fields:
-      entity_id:
-        description: "device_tracker-Entity"
-        example: "device_tracker.lea_phone"
-      custom_user_id:
-        description: "CineMatch-Profil-ID"
-        example: "cinematch-1a2b3c4d"
-    sequence:
-      - service: python_script.link_tracker_user
-        data:
-          entity_id: "{{ entity_id }}"
-          custom_user_id: "{{ custom_user_id }}"
-```
-
-Datei `config/python_scripts/link_tracker_user.py` anlegen:
-
-```python
-entity_id = data.get("entity_id")
-custom_user_id = data.get("custom_user_id")
-
-if not entity_id or not custom_user_id:
-    logger.error("CineMatch: entity_id und custom_user_id sind erforderlich")
-elif (state := hass.states.get(entity_id)) is None:
-    logger.error("CineMatch: Entity %s existiert nicht", entity_id)
-else:
-    attributes = dict(state.attributes)
-    attributes["custom_user_id"] = custom_user_id
-    hass.states.async_set(entity_id, state.state, attributes, force_update=True)
-    logger.info("CineMatch: %s -> %s verknüpft", entity_id, custom_user_id)
-```
-
-CineMatch ruft beim Abschluss des Onboardings
-`POST /api/services/script/link_tracker_user` mit `entity_id` und
-`custom_user_id` auf. Der Tracker-Name kann über `HA_LINK_SERVICE` geändert
-werden (Format `domain.service`).
-
-> Hinweis: Die Integration, die den Tracker besitzt, kann Attribute beim
-> nächsten Update überschreiben. Für die Presence-Erkennung ist das unkritisch,
-> weil CineMatch die Zuordnung zusätzlich in der eigenen SQLite-DB speichert
-> (`ha_entity_id`). Für dauerhaft sichtbare Attribute in HA empfiehlt sich ein
-> Template-Sensor auf Basis der CineMatch-API.
+Für regelmäßige Aktualisierungen kann `homeassistant.update_entity` auf dem Sensor aufgerufen werden.
 
 ---
 
@@ -278,7 +182,7 @@ curl http://localhost:8000/api/v1/health
 {
   "status": "ok",
   "tmdb_configured": true,
-  "home_assistant_configured": true,
+  "presence_method": "ping",
   "admin_configured": true,
   "users": 3,
   "region": "DE"
@@ -303,7 +207,7 @@ curl -s -X POST http://localhost:8000/api/v1/quiz/next \
   -H 'Content-Type: application/json' \
   -d '{"session_id":"<ID>","limit":3}'
 
-# 4) Profil anlegen + HA-Tracker verknüpfen
+# 4) Profil anlegen und aktuelle IP per Ping prüfen
 curl -s -X POST http://localhost:8000/api/v1/quiz/complete \
   -H 'Content-Type: application/json' \
   -d '{"session_id":"<ID>"}'
@@ -315,7 +219,7 @@ Socket-Peer gelesen und beim Abschluss am Profil gespeichert.
 ### Empfehlungen
 
 ```bash
-# Automatisch: alle registrierten Personen, deren Tracker "home" ist
+# Automatisch: alle registrierten Profile mit per Ping erreichbarer privater IP
 curl -s -X POST http://localhost:8000/api/v1/recommendations \
   -H 'Content-Type: application/json' \
   -d '{"media_type":"movie","limit":10}'
@@ -331,20 +235,18 @@ Antwort (gekürzt):
 ```json
 {
   "media_type": "movie",
-  "presence_source": "home_assistant",
+  "presence_source": "ping",
   "present_users": [
     {
       "id": "…",
       "name": "Lea",
       "avatar_url": "/static/avatars/uploads/lea.jpg",
-      "providers": ["netflix"],
-      "provider_names": ["Netflix"],
-      "source": "home_assistant",
-      "ha_entity_id": "device_tracker.lea_phone",
-      "tracker_state": "home"
+      "providers": ["prime"],
+      "provider_names": ["Amazon Prime Video"],
+      "source": "ping"
     }
   ],
-  "active_providers": [{"slug": "netflix", "name": "Netflix"}],
+  "active_providers": [{"slug": "prime", "name": "Amazon Prime Video"}],
   "household_providers": [{"slug": "netflix", "name": "Netflix"}],
   "excluded_titles": 4,
   "candidates_checked": 38,
@@ -371,9 +273,9 @@ Antwort (gekürzt):
 
 Fehlercodes mit sprechender `detail`-Meldung:
 
-* `409` – keine Provider-Schnittmenge oder kein aktives Haushalts-Abo
+* `409` – kein aktives Haushalts-Abo
 * `404` – unbekannte Nutzer / niemand anwesend
-* `502` – TMDB oder Home Assistant nicht erreichbar
+* `502` – TMDB nicht erreichbar
 
 ### Presence
 
@@ -381,15 +283,16 @@ Fehlercodes mit sprechender `detail`-Meldung:
 curl http://localhost:8000/api/v1/presence
 ```
 
-Liefert alle registrierten Personen, deren zugeordneter `device_tracker`
-aktuell `home` meldet.
+Liefert alle registrierten Personen, deren gespeicherte private IP auf Ping
+antwortet. Alternativ lassen sich Personen über `users` explizit angeben.
 
 ---
 
 ## Empfehlungslogik
 
-1. **Aktive Dienste** = Haushalts-Abos aus `/admin` ∩ Dienste der anwesenden
-   Personen. Keine Schnittmenge → keine Empfehlung (409).
+1. **Kandidaten-Provider** sind ausschließlich die aktivierten Haushalts-Abos
+aus `/admin`. Die persönlichen Provider-Auswahlen im Onboarding dienen nur der
+Profil-/Quiz-Personalisierung und beschränken die Empfehlungen nicht.
 2. **Kandidaten** über `GET /discover/{movie|tv}` mit
    `watch_region=DE`, `with_watch_providers=<IDs>`,
    `with_watch_monetization_types=flatrate`, optional Genre-Filter aus dem
@@ -429,11 +332,11 @@ aus populären Titeln. Bereits gesehene Karten werden dedupliziert.
 
 * **Haushalts-Abos:** sechs Toggles. Die Auswahl wird sofort gespeichert und
   gilt für alle folgenden Empfehlungen.
-* **Personen:** Name, IP, Dienste, Swipe-Zahlen, Top-Genres, HA-Tracker.
+* **Personen:** Name, IP, persönliche Dienste, Swipe-Zahlen und Top-Genres.
 * **Profilbild:** Upload (PNG/JPEG/WebP, max. 3 MB) oder eine von sechs
   Vorlagen. Uploads landen unter `static/avatars/uploads/`, Vorlagen unter
   `static/avatars/`.
-* **Zurücksetzen:** löscht Swipes/Geschmack, behält Avatar und HA-Zuordnung.
+* **Zurücksetzen:** löscht Swipes/Geschmack und behält den Avatar.
 * **Löschen:** entfernt Profil und hochgeladenes Bild.
 
 Die Seite ist per HTTP Basic Auth geschützt. Ohne `ADMIN_PASSWORD` antworten
@@ -461,8 +364,8 @@ server {
 }
 ```
 
-`TRUST_FORWARDED_FOR=true` setzen, damit die echte Handy-IP ankommt. Nur so
-funktioniert das IP-Matching gegen die `device_tracker`.
+`TRUST_FORWARDED_FOR=true` setzen, damit die echte Handy-IP gespeichert und
+später vom Container per Ping geprüft wird.
 
 CineMatch hat keinen eigenen Login für `/onboard` und `/api/v1/*` – das ist für
 den Betrieb im Heimnetz gedacht. Wenn du die API ins Internet stellst, schütze
@@ -481,18 +384,15 @@ der anwesenden Personen.
 * **Quiz-Sessions:** werden nach 48 Stunden automatisch aufgeräumt.
 * **TMDB-Cache:** In-Memory, TTL 15 Minuten (konfigurierbar). Kein externer
   Cache nötig.
-* **Logs:** uvicorn-Standardausgabe. Konfigurationsprobleme (fehlender
-  TMDB-Key, fehlendes Admin-Passwort, fehlende HA-Zugänge) werden beim Start
-  geloggt.
+* **Logs:** uvicorn-Standardausgabe. Konfigurationsprobleme (fehlender TMDB-Key
+  oder fehlendes Admin-Passwort) werden beim Start geloggt.
 
 ### Bekannte Grenzen
 
-* Die automatische Tracker-Zuordnung braucht ein IP-Attribut am
-  `device_tracker`. Alternativ die Person einmal über die API mit
-  `ha_entity_id`/IP verknüpfen – danach greift die gespeicherte Zuordnung.
-* Die HA-Verknüpfung schreibt Attribute per `python_script`, weil die REST-API
-  keine generischen State-Attribute setzen kann. Das Script muss installiert
-  sein (`HA_LINK_SERVICE`).
+* ICMP kann durch Firewalls oder Geräteeinstellungen blockiert sein. Dann gilt
+  das Gerät für CineMatch als abwesend. Container und Geräte müssen im selben
+  Netzwerk direkt erreichbar sein; beim Docker-Bridge-Netz kann dafür eine
+  Host-Netzwerkkonfiguration oder passende Route nötig sein.
 * `discover` liefert pro Genre-Filter maximal 100 Seiten; CineMatch prüft
   bewusst nur die ersten Seiten und dafür jeden Kandidaten strikt gegen die
   DE-Flatrate-Anbieter.

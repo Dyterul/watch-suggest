@@ -53,7 +53,7 @@
           <span class="btn-label">Geschmack kalibrieren</span>
           <span class="btn-arrow" aria-hidden="true">→</span>
         </button>
-        <p class="privacy">Deine IP-Adresse wird nur lokal gespeichert, um dein Handy später über Home Assistant als „anwesend“ zu erkennen.</p>
+        <p class="privacy">Deine private IP-Adresse wird lokal gespeichert. CineMatch prüft später per Ping aus dem Container, ob dein Gerät erreichbar ist.</p>
       </form>
     </section>
 
@@ -126,7 +126,7 @@
 
         <dl class="stats" id="done-stats"></dl>
 
-        <div id="done-ha" class="ha-status" hidden></div>
+        <div id="done-presence" class="presence-status" hidden></div>
 
         <div class="done-actions">
           <a class="btn btn-primary btn-wide" href="/onboard">Weiteres Profil anlegen</a>

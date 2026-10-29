@@ -61,7 +61,7 @@
     doneSub: $("#done-sub"),
     doneGenres: $("#done-genres"),
     doneStats: $("#done-stats"),
-    doneHa: $("#done-ha"),
+    donePresence: $("#done-presence"),
     doneIp: $("#done-ip"),
     redoBtn: $("#redo-btn"),
   };
@@ -708,18 +708,15 @@
       els.doneStats.append(term, detail);
     });
 
-    const ha = data.home_assistant || {};
-    els.doneHa.hidden = false;
-    els.doneHa.className = "ha-status";
-    if (ha.linked) {
-      els.doneHa.classList.add("ok");
-      els.doneHa.textContent = `✓ Home Assistant verknüpft (${ha.entity_id}). Dein Handy wird beim nächsten Filmabend automatisch erkannt.`;
-    } else if (ha.matched) {
-      els.doneHa.classList.add("warn");
-      els.doneHa.textContent = `Tracker ${ha.entity_id || ""} gefunden, aber die Verknüpfung hat noch nicht geklappt: ${ha.message || "unbekannter Fehler"}`;
+    const presence = data.presence || {};
+    els.donePresence.hidden = false;
+    els.donePresence.className = "presence-status";
+    if (presence.reachable) {
+      els.donePresence.classList.add("ok");
+      els.donePresence.textContent = "✓ Dein Gerät antwortet auf Ping. CineMatch kann es automatisch als anwesend erkennen.";
     } else {
-      els.doneHa.classList.add("muted");
-      els.doneHa.textContent = ha.message || "Home Assistant ist nicht konfiguriert – die Zuordnung erfolgt später.";
+      els.donePresence.classList.add("muted");
+      els.donePresence.textContent = "Dein Gerät antwortet gerade nicht auf Ping. Die Anwesenheit wird beim nächsten Abruf erneut geprüft.";
     }
 
     els.doneIp.textContent = data.client_ip || "deiner IP";

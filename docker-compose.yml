@@ -15,6 +15,8 @@ services:
       - cinematch-data:/app/data
       # Hochgeladene Avatare (Presets liegen im Image)
       - cinematch-avatars:/app/static/avatars/uploads
+    cap_add:
+      - NET_RAW
     security_opt:
       - no-new-privileges:true
 

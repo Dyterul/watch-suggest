@@ -27,14 +27,11 @@ CREATE TABLE IF NOT EXISTS users (
     skipped TEXT NOT NULL DEFAULT '[]',
     seen TEXT NOT NULL DEFAULT '[]',
     avatar_url TEXT,
-    ha_entity_id TEXT,
-    custom_user_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_name ON users (lower(name));
-CREATE INDEX IF NOT EXISTS idx_users_custom_user_id ON users (custom_user_id);
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -103,15 +100,13 @@ class Store:
             "skipped": _loads(row["skipped"], []),
             "seen": _loads(row["seen"], []),
             "avatar_url": row["avatar_url"],
-            "ha_entity_id": row["ha_entity_id"],
-            "custom_user_id": row["custom_user_id"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
 
     @staticmethod
     def public_user(user: dict[str, Any]) -> dict[str, Any]:
-        """Nur unkritische Felder (keine IP, keine HA-Interna)."""
+        """Nur unkritische Profilfelder (keine IP-Adresse)."""
         return {
             "id": user["id"],
             "name": user["name"],
@@ -137,20 +132,6 @@ class Store:
             ).fetchone()
         return self._user_from_row(row) if row else None
 
-    def get_user_by_custom_user_id(self, custom_user_id: str) -> dict[str, Any] | None:
-        with self._db() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE custom_user_id = ? LIMIT 1", (custom_user_id,)
-            ).fetchone()
-        return self._user_from_row(row) if row else None
-
-    def get_user_by_ha_entity(self, entity_id: str) -> dict[str, Any] | None:
-        with self._db() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE ha_entity_id = ? LIMIT 1", (entity_id,)
-            ).fetchone()
-        return self._user_from_row(row) if row else None
-
     def upsert_user(
         self,
         *,
@@ -165,8 +146,8 @@ class Store:
     ) -> tuple[dict[str, Any], bool]:
         """Legt an oder aktualisiert das Profil gleichen Namens (case-insensitiv).
 
-        Avatar und Home-Assistant-Verknuepfung bleiben bei einem erneuten
-        Onboarding erhalten. Rueckgabe: (Nutzer, neu_angelegt).
+        Der Avatar bleibt bei einem erneuten Onboarding erhalten.
+        Rueckgabe: (Nutzer, neu_angelegt).
         """
         now = utc_now()
         existing = self.get_user_by_name(name)
@@ -214,21 +195,6 @@ class Store:
                 (ip, utc_now(), user_id),
             )
 
-    def set_user_link(
-        self, user_id: str, *, custom_user_id: str | None, ha_entity_id: str | None
-    ) -> None:
-        with self._db() as conn:
-            conn.execute(
-                """
-                UPDATE users
-                   SET custom_user_id = COALESCE(?, custom_user_id),
-                       ha_entity_id = COALESCE(?, ha_entity_id),
-                       updated_at = ?
-                 WHERE id = ?
-                """,
-                (custom_user_id, ha_entity_id, utc_now(), user_id),
-            )
-
     def set_user_avatar(self, user_id: str, avatar_url: str | None) -> None:
         with self._db() as conn:
             conn.execute(
@@ -245,7 +211,7 @@ class Store:
         return user
 
     def reset_user_profile(self, user_id: str) -> dict[str, Any] | None:
-        """Setzt Swipes/Geschmack zurueck, behaelt Identitaet, Avatar und HA-Link."""
+        """Setzt Swipes/Geschmack zurueck und behaelt Identitaet und Avatar."""
         if not self.get_user(user_id):
             return None
         with self._db() as conn:

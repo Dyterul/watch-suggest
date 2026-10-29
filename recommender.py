@@ -58,7 +58,7 @@ class QuizError(RuntimeError):
 
 
 class RecommendationError(RuntimeError):
-    """Empfehlung kann nicht berechnet werden (z. B. leere Provider-Schnittmenge)."""
+    """Empfehlung kann nicht berechnet werden (z. B. kein Haushalts-Abo aktiv)."""
 
     def __init__(self, message: str, status_code: int = 409) -> None:
         super().__init__(message)
@@ -622,7 +622,7 @@ class QuizService:
 
 
 class RecommendationEngine:
-    """Gruppen-Empfehlungen nach Least-Misery mit strikter Provider-Pruefung."""
+    """Least-Misery-Gruppenempfehlungen mit striktem Haushalts-Provider-Filter."""
 
     def __init__(self, tmdb: TMDBClient, *, region: str = "DE") -> None:
         self.tmdb = tmdb
@@ -836,30 +836,28 @@ class RecommendationEngine:
         if not present_users:
             raise RecommendationError(
                 "Keine anwesenden Nutzer gefunden. Bitte Nutzer uebergeben oder "
-                "Home Assistant konfigurieren.",
+                "Profile mit erreichbaren privaten IP-Adressen anlegen.",
                 404,
             )
 
-        household = [slug for slug in household_providers if slug in PROVIDER_BY_SLUG]
-        active_slugs = [
-            slug
-            for slug in household
-            if any(slug in (user.get("providers") or []) for user in present_users)
-        ]
-        if not active_slugs:
-            if not household:
-                raise RecommendationError(
-                    "Im Admin-Dashboard sind keine Haushalts-Abos aktiviert.", 409
-                )
+        household = list(
+            dict.fromkeys(
+                slug for slug in household_providers if slug in PROVIDER_BY_SLUG
+            )
+        )
+        if not household:
             raise RecommendationError(
-                "Keine Ueberschneidung: Die anwesenden Personen nutzen keinen der "
-                "aktuell aktiven Haushalts-Dienste.",
-                409,
+                "Im Admin-Dashboard sind keine Haushalts-Abos aktiviert.", 409
             )
         active_provider_ids = {
-            int(PROVIDER_BY_SLUG[slug]["tmdb_id"]) for slug in active_slugs
+            int(PROVIDER_BY_SLUG[slug]["tmdb_id"]) for slug in household
         }
-
+        profile_provider_slugs = {
+            slug
+            for user in present_users
+            for slug in (user.get("providers") or [])
+            if slug in PROVIDER_BY_SLUG
+        }
         genre_map = await self.tmdb.genres(media_type)
         excluded = self._excluded_keys(present_users)
         genre_filter = self._genre_filter(present_users, media_type)
@@ -928,7 +926,8 @@ class RecommendationEngine:
             "results": results,
             "active_providers": [
                 {"slug": slug, "name": PROVIDER_BY_SLUG[slug]["name"]}
-                for slug in active_slugs
+                for slug in PROVIDER_BY_SLUG
+                if slug in profile_provider_slugs
             ],
             "household_providers": [
                 {"slug": slug, "name": PROVIDER_BY_SLUG[slug]["name"]}
