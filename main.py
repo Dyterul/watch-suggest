@@ -11,9 +11,8 @@ Oeffentliche Routen
 * ``POST /api/v1/quiz/start``     -> Quiz-Session inkl. Benchmark-Karten
 * ``POST /api/v1/quiz/swipe``     -> Swipe speichern, Genre-Vektor aktualisieren
 * ``POST /api/v1/quiz/next``      -> naechste Karten adaptiv nachladen
-* ``POST /api/v1/quiz/complete``  -> Profil anlegen + HA-Verknuepfung
+* ``POST /api/v1/quiz/complete``  -> Profil anlegen
 * ``POST /api/v1/recommendations``-> Gruppenempfehlungen
-* ``GET  /api/v1/presence``       -> anwesende, registrierte Personen (HA)
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ from config import (
     get_settings,
     provider_public_list,
 )
-from ha_client import HAClient, HAError, extract_client_ip
 from recommender import (
     MEDIA_TYPES,
     QuizError,
