@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -451,6 +452,16 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = settings
+
+    # CORS-Middleware fuer Produktionsumgebung mit HTTPS/Reverse Proxy
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.mount(
         "/static",
         StaticFiles(directory=str(settings.static_dir)),

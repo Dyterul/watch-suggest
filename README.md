@@ -88,6 +88,7 @@ Alle Variablen können in `.env` oder als echte Umgebungsvariablen gesetzt werde
 | `TMDB_REGION` | `DE` | Watch-Region für Discover/Provider |
 | `TMDB_LANGUAGE` | `de-DE` | Sprache für Titel/Overviews |
 | `TRUST_FORWARDED_FOR` | `true` | `X-Forwarded-For` auswerten (Nginx/Reverse Proxy) |
+| `CORS_ORIGINS` | `*` | Erlaubte Origins für CORS (Komma-getrennt, `*` für alle; in Produktion Domain(s) angeben) |
 | `HOUSEHOLD_DEFAULT_PROVIDERS` | `netflix,prime` | Startwert, bis im Admin gespeichert wird (Komma oder JSON) |
 | `QUIZ_MAX_ANSWERS` | `20` | Maximale Karten pro Session |
 | `MAX_AVATAR_BYTES` | `3145728` | Upload-Limit für Avatare (3 MB) |

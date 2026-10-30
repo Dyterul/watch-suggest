@@ -75,11 +75,23 @@ class Settings(BaseSettings):
     # Reverse-Proxy / IP-Erkennung
     trust_forwarded_for: bool = True
 
+    # CORS (fuer Produktionsumgebung mit HTTPS/Reverse Proxy)
+    cors_origins: list[str] = ["*"]
+
     # Haushalt / Quiz
     household_default_providers: list[str] = ["netflix", "prime"]
     max_avatar_bytes: int = 3 * 1024 * 1024
     quiz_max_answers: int = 20
     quiz_benchmark_movies: list[int] = [27205, 120467, 129, 419430, 313369]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            value = [item.strip() for item in value.split(",") if item.strip()]
+        if value is None:
+            return ["*"]
+        return value
 
     @field_validator("household_default_providers", mode="before")
     @classmethod
