@@ -1,0 +1,28 @@
+services:
+  cinematch:
+    build: .
+    image: cinematch:latest
+    container_name: cinematch
+    restart: unless-stopped
+    # HOST NETWORK MODE: Container teilt Netzwerk-Stack mit Host
+    # Ermöglicht Ping von LAN-Geräten, aber Port-Mapping entfällt
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Berlin
+    # WICHTIG: Bei network_mode: host funktionieren 'ports:' nicht
+    # Der Container lauscht direkt auf Host-Port 8000
+    volumes:
+      # SQLite-Datenbank (persistiert)
+      - cinematch-data:/app/data
+      # Hochgeladene Avatare (Presets liegen im Image)
+      - cinematch-avatars:/app/static/avatars/uploads
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  cinematch-data:
+  cinematch-avatars:
